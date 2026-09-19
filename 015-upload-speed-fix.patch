@@ -1,0 +1,40 @@
+--- a/front/components/Home/File/FileUploadProgressView/index.vue
++++ b/front/components/Home/File/FileUploadProgressView/index.vue
+@@ -228,18 +228,30 @@
+     formData.append('file', new Blob([chunk]))
+     formData.append('index', (index + 1).toString())
+     formData.append('id', id)
+-    const { data: res } = await axios.post('/api/file/slice', formData, {
+-        onUploadProgress: throttle((progressEvent) => {
+-            const { rate } = progressEvent || {}
+-            const timestamp = dayjs().unix()
+-            speedChartData.value[timestamp] = [...(speedChartData.value[timestamp] || []), { fileId, index, value: rate || 0 }]
+-        }, 1000),
+-    })
++    const { data: res } = await axios.post('/api/file/slice', formData)
+     const { code } = res || {}
+     if (code !== 200) {
+         throw new Error(t('page.progress.file.uploadFailed'))
+     }
+     uploadfile.uploadInfo!.chunks![index]!.status = 'success'
++
++    // Report real throughput. The previous implementation trusted `progressEvent.rate`, which the
++    // axios/browser combination used here never populates, so every sample was stored as 0 and the
++    // UI showed "0 B/s" no matter how fast the transfer was. Instead, spread this chunk's bytes
++    // across the seconds the chunk actually took - the existing per-second chart then displays it.
++    {
++        const startedAt = uploadfile.uploadInfo!.chunks![index]!.createdAt || dayjs().unix()
++        const finishedAt = dayjs().unix()
++        const bytes = (chunk as any)?.byteLength ?? (chunk as any)?.length ?? ChunkSize
++        const seconds = Math.max(1, finishedAt - startedAt + 1)
++        const perSecond = bytes / seconds
++        for (let sec = startedAt; sec <= finishedAt; sec++) {
++            speedChartData.value[sec] = [
++                ...(speedChartData.value[sec] || []),
++                { fileId, index, value: perSecond },
++            ]
++        }
++    }
+     if (Object.entries(uploadfile.uploadInfo!.chunks || {}).filter(([index, chunk]) => chunk.status === 'success').length === chunkLength) {
+         uploadfile.queue.push({ taskType: 'finish', queueType: 'sync', taskId: nanoid() })
+     }
