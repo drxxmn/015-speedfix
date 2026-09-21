@@ -1,0 +1,28 @@
+--- a/backend/internal/controllers/file.go
++++ b/backend/internal/controllers/file.go
+@@ -125,6 +125,12 @@
+ 	if err != nil {
+ 		return utils.HTTPErrorHandler(c, err)
+ 	}
++	if fileInfo == nil {
++		// GetRedisFileInfo returns (nil, nil) when there is no record for this id - an expired
++		// task, or one that was never created. The next statement dereferences fileInfo, so
++		// without this guard the handler panics and the caller sees a bare 502.
++		return utils.HTTPErrorHandler(c, ErrUploadTaskExpired)
++	}
+ 
+ 	now := time.Now().Unix()
+ 	if fileInfo.CreatedAt+fileInfo.Expire < now {
+@@ -181,6 +187,12 @@
+ 	if err != nil {
+ 		return utils.HTTPErrorHandler(c, err)
+ 	}
++	if fileInfo == nil {
++		// GetRedisFileInfo returns (nil, nil) when there is no record for this id - an expired
++		// task, or one that was never created. The next statement dereferences fileInfo, so
++		// without this guard the handler panics and the caller sees a bare 502.
++		return utils.HTTPErrorHandler(c, ErrUploadTaskExpired)
++	}
+ 
+ 	if fileInfo.FileType != filemodel.FileTypeInit {
+ 		return utils.HTTPErrorHandler(c, ErrInvalidUploadTaskState)

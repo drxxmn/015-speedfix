@@ -46,3 +46,31 @@ tag if `patch` refuses to apply.
 015 is **AGPL-3.0**, and this patch is a modification of it. This repository exists so that the
 corresponding source is available to anyone who uses a build of it, as that licence requires. The
 patch is offered under the same terms. All credit for 015 itself belongs to its author.
+
+## Second patch: a nil-record panic (value check, not a fix to the upload path)
+
+`015-nil-fileinfo-guard.patch` guards two handlers in `backend/internal/controllers/file.go`.
+Both call `GetRedisFileInfo(r.FileId)`, check only the error, then dereference the result:
+
+    fileInfo, err := filemodel.GetRedisFileInfo(r.FileId)
+    if err != nil { ... }
+    // then reads fileInfo.CreatedAt  (UploadFileSlice)
+    //      or   fileInfo.FileType   (FinishUploadTask)
+
+When no record exists for the id - an expired upload task, or an id never created -
+`GetRedisFileInfo` returns `(nil, nil)`, so the handler panics. The client sees a bare 502 and the
+UI says "upload failed, please try again"; the log shows
+
+    http: panic serving ...: runtime error: invalid memory address or nil pointer dereference
+    backend/internal/controllers.UploadFileSlice(...) file.go:130
+    backend/internal/controllers.FinishUploadTask(...) file.go:185
+
+The fix is a nil check in both handlers returning the expired-task error. Verified locally: the same
+request now answers `400 {"message":"UploadTaskExpired"}`.
+
+## Building both
+
+    PATCH=$PWD/015-upload-speed-fix.patch bash apply-and-build.sh 0.14.0
+
+`apply-and-build.sh` takes a single patch; concatenate the two files to carry both, or apply them in
+sequence to a checkout. It dry-runs first and refuses to build if the patch no longer applies.
